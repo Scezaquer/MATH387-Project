@@ -2,6 +2,14 @@ import numpy as np
 from tqdm import tqdm
 
 
+def compute_accuracy(y_test, y_hat):
+    y_hat_labels = np.argmax(y_hat, axis=1)
+    y_test_labels = np.argmax(y_test, axis=1)
+    accuracy = np.mean(y_hat_labels == y_test_labels)
+
+    return accuracy
+
+
 def sigmoid(x):
     """Numerically stable sigmoid function."""
     return np.where(x >= 0, 1 / (1 + np.exp(-x)), np.exp(x) / (1 + np.exp(x)))
@@ -13,7 +21,7 @@ def sigmoid_derivative(x):
     return a * (1 - a)
 
 
-class SGD_MLP:
+class pseudo_newton_MLP:  # Quickprop
     def __init__(self, nbr_layers, units_per_layer):
         assert nbr_layers == len(units_per_layer)
         self.activations = []
@@ -23,10 +31,14 @@ class SGD_MLP:
             layer = layer - 0.5
             self.layers.append(layer)
 
-    def fit(self, x, y, lr, epochs, minibatch_size, print_updates=1000):
+    def fit(self, x, y, lr, epochs, minibatch_size, print_updates=1000, mu=2):
         # Labels must be one-hot encoded
         for epoch in range(epochs):
             cumulative_loss = 0
+
+            delta_w_prev = [np.zeros(i.shape) for i in self.layers]
+            g_prev = [np.zeros(i.shape) for i in self.layers]
+
             for minibatch in tqdm(range(int(len(x)/minibatch_size))):
                 cumulative_grad = [np.zeros(i.shape) for i in self.layers]
                 minibatch_ids = np.random.choice(len(x), minibatch_size, False)
@@ -62,8 +74,25 @@ class SGD_MLP:
                          zip(cumulative_grad, gradients, self.activations)]
 
                 # Update the weights from the total of the gradients
+                delta_w = [np.zeros(i.shape) for i in self.layers]
                 for i, layer in enumerate(self.layers):
-                    self.layers[i] = layer - lr*cumulative_grad[i]
+                    delta_w[i] = cumulative_grad[i] / (g_prev[i] - cumulative_grad[i]) * delta_w_prev[i]
+
+                    overflow_mask = np.isnan(delta_w[i]) | (abs(delta_w[i]) > abs(delta_w_prev[i]))
+                    delta_w[i][overflow_mask] = mu*delta_w_prev[i][overflow_mask]
+
+                    # GD step for weights that didn't change
+                    zero_mask = (delta_w[i] == 0).astype(int)
+                    delta_w[i] = delta_w[i] - lr*cumulative_grad[i]*zero_mask
+
+                    self.layers[i] = layer + delta_w[i]
+
+                delta_w_prev = delta_w
+                g_prev = cumulative_grad
+
+                pred = [self.predict(data, test=True) for data in minibatch_x]
+                print("Train acc: "
+                      f"{compute_accuracy(minibatch_y, pred)}")
 
             if print_updates and not epoch % print_updates:
                 print(f"[TRAINING] epoch = {epoch}, loss={cumulative_loss}")
@@ -84,7 +113,7 @@ if __name__ == "__main__":
     X = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
     y = np.array([[1, 0], [0, 1], [0, 1], [1, 0]])
 
-    mlp = SGD_MLP(4, (3, 3, 3, 2))
+    mlp = pseudo_newton_MLP(4, (3, 3, 3, 2))
     mlp.fit(X, y, 0.5, 50000, 4, 1000)
 
     print(f"Input: [0, 0], Predicted: {mlp.predict([0, 0])} Correct: [1, 0]")

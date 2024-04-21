@@ -21,7 +21,7 @@ def sigmoid_derivative(x):
     return a * (1 - a)
 
 
-class SGD_MLP:
+class SGD_newton_hybrid_MLP:
     def __init__(self, nbr_layers, units_per_layer):
         assert nbr_layers == len(units_per_layer)
         self.activations = []
@@ -31,11 +31,15 @@ class SGD_MLP:
             layer = layer - 0.5
             self.layers.append(layer)
 
-    def fit(self, x, y, lr, epochs, minibatch_size, print_updates=1000):
+    def fit(self, x, y, lr, epochs, minibatch_size, print_updates=1000,
+            switching_point=35, mu=2):
         # Labels must be one-hot encoded
         acc = []
         for epoch in range(epochs):
             cumulative_loss = 0
+
+            delta_w_prev = [np.zeros(i.shape) for i in self.layers]
+            g_prev = [np.zeros(i.shape) for i in self.layers]
             for minibatch in tqdm(range(int(len(x)/minibatch_size))):
                 cumulative_grad = [np.zeros(i.shape) for i in self.layers]
                 minibatch_ids = np.random.choice(len(x), minibatch_size, False)
@@ -70,9 +74,28 @@ class SGD_MLP:
                         [x + y.T@z for x, y, z in
                          zip(cumulative_grad, gradients, self.activations)]
 
-                # Update the weights from the total of the gradients
-                for i, layer in enumerate(self.layers):
-                    self.layers[i] = layer - lr*cumulative_grad[i]
+                if minibatch < switching_point:
+                    # Update the weights from the total of the gradients
+                    delta_w = [np.zeros(i.shape) for i in self.layers]
+                    for i, layer in enumerate(self.layers):
+                        delta_w[i] = cumulative_grad[i] / (g_prev[i] - cumulative_grad[i]) * delta_w_prev[i]
+
+                        overflow_mask = np.isnan(delta_w[i]) | (abs(delta_w[i]) > abs(delta_w_prev[i]))
+                        delta_w[i][overflow_mask] = mu*delta_w_prev[i][overflow_mask]
+
+                        # GD step for weights that didn't change
+                        zero_mask = (delta_w[i] == 0).astype(int)
+                        delta_w[i] = delta_w[i] - lr*cumulative_grad[i]*zero_mask
+
+                        self.layers[i] = layer + delta_w[i]
+
+                    delta_w_prev = delta_w
+                    g_prev = cumulative_grad
+
+                else:
+                    # Update the weights from the total of the gradients
+                    for i, layer in enumerate(self.layers):
+                        self.layers[i] = layer - lr*cumulative_grad[i]
 
                 pred = [self.predict(data, test=True) for data in minibatch_x]
                 acc.append(compute_accuracy(minibatch_y, pred))

@@ -38,6 +38,8 @@ class Stochastic_Line_search_MLP:
     def fit(self, x, y, epochs, minibatch_size=1000,
             print_updates=1, d=10, n=10):
         # Labels must be one-hot encoded
+        acc = []
+        acc_improvement = []
         for epoch in range(epochs):
             cumulative_loss = 0
             for minibatch in tqdm(range(int(len(x)/minibatch_size))):
@@ -122,13 +124,20 @@ class Stochastic_Line_search_MLP:
                                    for data in minibatch_x]
                         fx2 = -compute_loss(minibatch_y, pred_x2)
                     print(f"iter {i}, acc1: {-fx1} acc2: {-fx2}")
-                    print(f"acc: {compute_accuracy(minibatch_y, pred_x2)}")
+                    accuracy = compute_accuracy(minibatch_y, pred_x2)
+                    if i == 2:
+                        acc_improvement.append(accuracy)
+                    if i == n-2:
+                        acc_improvement[-1] = accuracy - acc_improvement[-1]
+                    print(f"acc: {accuracy}")
 
                 # pick the best of the two endpoints
                 self.layers = best_pt
+                acc.append(accuracy)
 
             if print_updates and not epoch % print_updates:
                 print(f"[TRAINING] epoch = {epoch}, loss={cumulative_loss}")
+        return acc, acc_improvement
 
     def predict(self, x, test=False, using_weights=None):
         x = np.append(x, 1)  # Intercept
@@ -154,6 +163,8 @@ class Line_search_MLP:
 
     def fit(self, x, y, epochs, print_updates=1, d=10, n=10):
         # Labels must be one-hot encoded
+        acc = []
+        acc_improvement = []
         for epoch in range(epochs):
             cumulative_loss = 0
             cumulative_grad = [np.zeros(i.shape) for i in self.layers]
@@ -232,13 +243,20 @@ class Line_search_MLP:
                                for data in x]
                     fx2 = -compute_loss(y, pred_x2)
                 print(f"iter {i}, acc1: {-fx1} acc2: {-fx2}")
-                print(f"acc: {compute_accuracy(y, pred_x2)}")
+                accuracy = compute_accuracy(y, pred_x2)
+                if i == 2:
+                    acc_improvement.append(accuracy)
+                if i == n-2:
+                    acc_improvement[-1] = accuracy - acc_improvement[-1]
+                print(f"acc: {accuracy}")
 
+            acc.append(accuracy)
             # pick the best of the two endpoints
             self.layers = best_pt
 
             if print_updates and not epoch % print_updates:
                 print(f"[TRAINING] epoch = {epoch}, loss={cumulative_loss}")
+        return acc, acc_improvement
 
     def predict(self, x, test=False, using_weights=None):
         x = np.append(x, 1)  # Intercept

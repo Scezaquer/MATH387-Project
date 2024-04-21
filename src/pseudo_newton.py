@@ -33,6 +33,7 @@ class pseudo_newton_MLP:  # Quickprop
 
     def fit(self, x, y, lr, epochs, minibatch_size, print_updates=1000, mu=2):
         # Labels must be one-hot encoded
+        acc = []
         for epoch in range(epochs):
             cumulative_loss = 0
 
@@ -91,11 +92,12 @@ class pseudo_newton_MLP:  # Quickprop
                 g_prev = cumulative_grad
 
                 pred = [self.predict(data, test=True) for data in minibatch_x]
-                print("Train acc: "
-                      f"{compute_accuracy(minibatch_y, pred)}")
+                acc.append(compute_accuracy(minibatch_y, pred))
+                print(f"Train acc: {acc[-1]}")
 
             if print_updates and not epoch % print_updates:
                 print(f"[TRAINING] epoch = {epoch}, loss={cumulative_loss}")
+        return acc
 
     def predict(self, x, test=False):
         x = np.append(x, 1)  # Intercept
